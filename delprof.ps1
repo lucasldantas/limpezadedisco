@@ -11,7 +11,7 @@ if (-not (Test-Path $exe)) {
 }
 
 if (Test-Path $exe) {
-  & $exe /D:10 /Q /I
+  & $exe /D:4 /Q /I
 } else {
   Write-Error 'delprof.exe não encontrado após a instalação.'
 }
