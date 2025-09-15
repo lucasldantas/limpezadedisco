@@ -1,52 +1,63 @@
-# ================== Remover perfis inativos (>= 30 dias) ==================
-# Mantém usuário atual + TechSupport
-# Necessário rodar como Administrador
+# Requer: PowerShell como Administrador
 
-$Days   = 5
-$Cutoff = (Get-Date).AddDays(-$Days)
-$Keep   = @("TechSupport")   # adicione aqui nomes extras para manter
+$delprofExe = 'C:\Program Files (x86)\Windows Resource Kits\Tools\delprof.exe'
+$msiUrl     = 'https://raw.githubusercontent.com/lucasldantas/limpezadedisco/main/delprof.msi'
+$msiLocal   = Join-Path $env:TEMP 'delprof.msi'
 
-# Detecta o usuário realmente logado (via explorer.exe)
-function Get-ActiveUsername {
-    try {
-        $p = Get-Process explorer -IncludeUserName -ErrorAction Stop | Select-Object -First 1
-        if ($p.UserName) { return ($p.UserName -split '\\')[-1] }
-    } catch {}
-    return $env:USERNAME
+function Ensure-Admin {
+    $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (-not $isAdmin) {
+        Write-Error 'Execute este script como Administrador.'
+        exit 1
+    }
 }
-$activeUser = Get-ActiveUsername
-$Keep += $activeUser   # garante que o usuário atual fique
 
-Write-Host "Usuário atual: $activeUser"
-Write-Host "Mantendo também: $($Keep -join ', ')"
-Write-Host "Cortando perfis não logados desde: $($Cutoff.ToString('yyyy-MM-dd HH:mm'))"
-Write-Host ""
+Ensure-Admin
 
-# Obtém perfis locais válidos
-$profiles = Get-CimInstance Win32_UserProfile |
-    Where-Object {
-        $_.LocalPath -like "C:\Users\*" -and
-        -not $_.Special -and
-        $_.LastUseTime -lt $Cutoff -and
-        -not $_.Loaded
-    }
+# 1) Instalar apenas se o delprof.exe não existe
+if (-not (Test-Path $delprofExe)) {
+    Write-Host 'Delprof não encontrado. Baixando e instalando...'
 
-foreach ($prof in $profiles) {
-    $leaf = Split-Path -Leaf $prof.LocalPath
-
-    if ($Keep -icontains $leaf) {
-        Write-Host "Mantendo perfil: $leaf"
-        continue
-    }
-
+    # Baixa o MSI para %TEMP%
     try {
-        $res = Invoke-CimMethod -InputObject $prof -MethodName Delete -ErrorAction Stop
-        if ($res.ReturnValue -eq 0) {
-            Write-Host "✔ Perfil removido: $leaf (último logon: $($prof.LastUseTime))"
-        } else {
-            Write-Warning "Falha ao remover $leaf (ReturnValue=$($res.ReturnValue))"
+        # Garante TLS mais atual
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri $msiUrl -OutFile $msiLocal -UseBasicParsing
+    } catch {
+        Write-Error "Falha ao baixar o MSI: $($_.Exception.Message)"
+        exit 2
+    }
+
+    # Instala silenciosamente
+    try {
+        $args = "/i `"$msiLocal`" /qn /norestart"
+        $p = Start-Process -FilePath msiexec.exe -ArgumentList $args -Wait -PassThru
+        if ($p.ExitCode -ne 0) {
+            Write-Error "Instalação do delprof.msi retornou código $($p.ExitCode)"
+            exit 3
         }
     } catch {
-        Write-Warning ("Erro ao remover {0}: {1}" -f $leaf, $_.Exception.Message)
+        Write-Error "Falha ao instalar o MSI: $($_.Exception.Message)"
+        exit 4
     }
+}
+
+# 2) Valida a presença do executável
+if (-not (Test-Path $delprofExe)) {
+    Write-Error 'delprof.exe não encontrado após a instalação.'
+    exit 5
+}
+
+# 3) Executa a limpeza: perfis não usados há 15 dias, silencioso e ignorando erros
+# /D:15 = mais antigos que 15 dias
+# /Q    = quiet
+# /I    = ignora erros (não interrompe por confirmações)
+try {
+    Write-Host 'Executando limpeza de perfis não utilizados há 15 dias...'
+    $proc = Start-Process -FilePath $delprofExe -ArgumentList '/D:15','/Q','/I' -Wait -PassThru
+    Write-Host "Concluído. Código de saída: $($proc.ExitCode)"
+    exit $proc.ExitCode
+} catch {
+    Write-Error "Falha ao executar o delprof: $($_.Exception.Message)"
+    exit 6
 }
