@@ -2,7 +2,7 @@
 # Mantém usuário atual + TechSupport
 # Necessário rodar como Administrador
 
-$Days   = 30
+$Days   = 5
 $Cutoff = (Get-Date).AddDays(-$Days)
 $Keep   = @("TechSupport")   # adicione aqui nomes extras para manter
 
