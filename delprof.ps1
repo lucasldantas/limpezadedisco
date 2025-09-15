@@ -26,7 +26,7 @@ if (Test-Path $delprof) {
     Write-Host "===== Antes da limpeza =====" -ForegroundColor Yellow
     Show-DiskInfo
 
-    Start-Process cmd.exe -ArgumentList '/c "C:\Program Files (x86)\Windows Resource Kits\Tools\delprof.exe" /D:30 /Q /I' -Wait -WindowStyle Hidden
+    Start-Process cmd.exe -ArgumentList '/c "C:\Program Files (x86)\Windows Resource Kits\Tools\delprof.exe" /D:5 /Q /I' -Wait -WindowStyle Hidden
 
     Write-Host "===== Depois da limpeza =====" -ForegroundColor Green
     Show-DiskInfo
